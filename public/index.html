@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mood Meter</title>
+  <!--
+    public/index.html: the whole web app in one file.
+      <style>  colours (light + dark mode), layout, chat bubbles, test-runner table
+      <body>   sidebar (chat list) · tabs · Chat view · Test runner view
+      <script> all the behaviour, see the section map at the top of the script
+    Netlify serves this file as-is; there's no build step.
+    To rebrand your bot: change the <title>, the <h1> in the sidebar, and
+    renderEmpty() in the script (welcome text + example questions).
+  -->
+  <style>
+    :root {
+      --bg: #f6f7f9; --panel: #fff; --side: #eef0f3; --text: #1b1f24; --muted: #5f6670; --border: #dfe3e8;
+      --accent: #2f6fde; --user: #e7effc; --ok: #1d7a46; --ok-bg: #e6f4ec; --bad: #b8332a; --bad-bg: #fbeae8;
+      --warn: #8a5a00; --warn-bg: #fdf3dc;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121417; --panel: #1a1d21; --side: #16191c; --text: #e9ebee; --muted: #9aa0a8; --border: #2c3036;
+        --accent: #6b9cf0; --user: #1f2c44; --ok: #5fc98b; --ok-bg: #16281e; --bad: #f07b70; --bad-bg: #2e1a18;
+        --warn: #f0c060; --warn-bg: #2d2412;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    button { font: inherit; cursor: pointer; }
+    .app { display: grid; grid-template-columns: 260px minmax(0, 1fr); height: 100%; }
+    .app > * { min-width: 0; }
+    aside { background: var(--side); border-right: 1px solid var(--border); padding: 14px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+    aside h1 { font-size: 1.05rem; margin: 4px 4px 6px; }
+    .btn { padding: 9px 14px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; }
+    .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    #sessions { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+    #sessions button { width: 100%; text-align: left; background: transparent; border: 0; color: var(--text); padding: 8px 10px; border-radius: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #sessions button.active, #sessions button:hover { background: var(--panel); }
+    .side-note { color: var(--muted); font-size: 0.8rem; padding: 0 4px; }
+    main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    header { display: flex; gap: 8px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .tabs { display: flex; gap: 4px; margin-right: auto; }
+    .tabs button { background: transparent; border: 0; padding: 6px 12px; border-radius: 8px; color: var(--muted); font-weight: 600; }
+    .tabs button.on { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+    .view { flex: 1; min-height: 0; display: none; flex-direction: column; }
+    .view.on { display: flex; }
+    #messages { flex: 1; overflow-y: auto; padding: 24px 16px; }
+    .thread { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+    .msg { padding: 11px 14px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .msg.user { background: var(--user); align-self: flex-end; max-width: 85%; }
+    .msg.assistant { background: var(--panel); border: 1px solid var(--border); align-self: flex-start; max-width: 92%; }
+    .meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .tag { font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); }
+    .tag.DECLINE { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+    .tag.CARE { background: var(--bad-bg); color: var(--bad); border-color: transparent; }
+    .tag.ANSWER { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+    .empty { text-align: center; color: var(--muted); margin-top: 12vh; }
+    .empty h2 { color: var(--text); margin: 0 0 6px; }
+    .starters { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 16px; }
+    .starters button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 8px 12px; font-size: 0.88rem; }
+    form#composer { padding: 12px 16px 18px; }
+    .composer-inner { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; }
+    #input { flex: 1; resize: none; padding: 11px 13px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); font: inherit; max-height: 160px; }
+    .err { color: var(--bad); }
+    /* Test runner */
+    #tests { padding: 20px 16px; overflow-y: auto; }
+    .card { max-width: 1000px; margin: 0 auto 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .card h2 { font-size: 1.02rem; margin: 0 0 6px; }
+    .hint { color: var(--muted); font-size: 0.87rem; margin: 0 0 12px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    .stats { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 14px; }
+    .stat b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+    .stat span { color: var(--muted); font-size: 0.8rem; }
+    .table-wrap { overflow-x: auto; max-height: 520px; overflow-y: auto; margin-top: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); position: sticky; top: 0; background: var(--panel); }
+    td.pass { color: var(--ok); background: var(--ok-bg); font-weight: 600; }
+    td.fail { color: var(--bad); background: var(--bad-bg); font-weight: 600; }
+    td.small { font-size: 0.8rem; color: var(--muted); max-width: 360px; }
+    code { font-size: 0.85em; }
+    @media (max-width: 760px) {
+      .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+      header .btn.ghost { padding: 6px 10px; font-size: 0.85rem; }
+      aside { border-right: 0; border-bottom: 1px solid var(--border); max-height: 34vh; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>Mood Meter</h1>
+    <button class="btn" id="new-chat">+ New chat</button>
+    <ul id="sessions"></ul>
+    <div class="side-note">Chats are saved on the server. This list lives in your browser.</div>
+  </aside>
+
+  <main>
+    <header>
+      <div class="tabs">
+        <button class="on" data-view="chat">Chat</button>
+        <button data-view="tests">Test runner</button>
+      </div>
+      <button class="btn ghost" id="dl-json" disabled>Download JSON</button>
+      <button class="btn ghost" id="dl-csv" disabled>Download CSV</button>
+    </header>
+
+    <!-- ===== Chat view ===== -->
+    <section class="view on" id="view-chat">
+      <div id="messages"><div class="thread" id="thread"></div></div>
+      <form id="composer">
+        <div class="composer-inner">
+          <textarea id="input" rows="1" placeholder="Paste some text to analyse, or ask a follow-up…" aria-label="Message"></textarea>
+          <button class="btn" id="send">Send</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ===== Test runner view ===== -->
+    <section class="view" id="view-tests">
+      <div id="tests">
+        <div class="card">
+          <h2>Run a test file</h2>
+          <p class="hint">CSV columns: <code>id, group, turns, expected_behavior</code> (optional: <code>pass_if, fail_if</code>). Separate turns with <code>||</code>. Each test runs in its own new session, turn by turn, so follow-ups use memory. <code>expected_behavior</code> is ANSWER, DECLINE or CARE.</p>
+          <div class="row">
+            <button class="btn ghost" id="load-sample" type="button">Load sample tests</button>
+            <button class="btn ghost" id="load-demo" type="button">Load demo tests (harder)</button>
+            <input type="file" id="file" accept=".csv,text/csv" />
+          </div>
+          <div class="row">
+            <button class="btn" id="run" type="button" disabled>Run</button>
+            <button class="btn ghost" id="dl-results" type="button" disabled>Download results CSV</button>
+          </div>
+          <div class="stats" id="stats" hidden></div>
+          <div class="table-wrap"><table id="table" hidden>
+            <thead><tr><th>ID</th><th>Group</th><th>Turns</th><th>Expected</th><th>Got (last turn)</th><th>Result</th><th>Last reply</th></tr></thead>
+            <tbody></tbody>
+          </table></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  // ===========================================================================
+  // The whole front end, in plain JavaScript (no framework, no build step).
+  // It only talks to our own backend:
+  //   POST /api/chat     send a message, get the reply   (netlify/functions/chat)
+  //   GET  /api/session  load a saved chat               (netlify/functions/session)
+  // The API key is never in this file; it stays on the server.
+  //
+  // Sections (FLOW numbers refer to docs/HOW_IT_WORKS.md):
+  //   A. Helpers
+  //   B. Tabs
+  //   C. Chat: send a message                 → FLOW 1
+  //   D. Chat: sidebar, reopen a chat         → FLOW 2
+  //   E. Chat: download JSON / CSV            → FLOW 3
+  //   F. Test runner: load, run, score, download → FLOW 7
+  // ===========================================================================
+
+  // ---------------------------------------------------------------------------
+  // A. Helpers
+  // ---------------------------------------------------------------------------
+  const $ = (id) => document.getElementById(id);
+
+  // el("div", {className: "x", textContent: "hi"}, child1, child2) creates an element.
+  // We always set text with textContent (never innerHTML), so text from users or
+  // from the model can't inject HTML into the page.
+  const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+
+  // localStorage wrapper. Used only for the sidebar's list of chat ids.
+  // Wrapped in try/catch because storage can be blocked (e.g. private browsing).
+  const store = {
+    get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
+
+  // Make the browser download some text as a file.
+  function download(name, text, type) {
+    const a = el("a", { href: URL.createObjectURL(new Blob([text], { type })), download: name });
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  // Turn a list of objects into CSV text (quotes fields with commas, quotes or line breaks).
+  const csvEsc = (v) => { const s = String(v ?? ""); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const toCSV = (objs) => { const k = Object.keys(objs[0] ?? {}); return [k.join(","), ...objs.map(o => k.map(x => csvEsc(o[x])).join(","))].join("\n") + "\n"; };
+
+  // Call our backend. Throws an Error with the server's message if it fails.
+  async function api(path, opts) {
+    const res = await fetch(path, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  // Send one chat message. session_id = null starts a new chat.
+  const sendMessage = (session_id, message) =>
+    api("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id, message }) });
+
+  // ---------------------------------------------------------------------------
+  // B. Tabs: switch between "Chat" and "Test runner"
+  // ---------------------------------------------------------------------------
+  document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+    document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === "view-" + b.dataset.view));
+  }));
+
+  // ---------------------------------------------------------------------------
+  // C. Chat: send a message (FLOW 1)
+  // ---------------------------------------------------------------------------
+  // sessionId is the chat currently on screen (null = a new, unsaved chat).
+  // `sessions` is the sidebar list, kept in this browser: [{ id, title, updated }].
+  // The messages themselves live on the server, not here.
+  let sessionId = null;
+  let sessions = store.get("mm_sessions", []);
+  const thread = $("thread"), input = $("input");
+
+  // Welcome screen with clickable example questions (shown for a new chat).
+  function renderEmpty() {
+    const starters = [
+      'What\'s the sentiment of "the apple was crunchy and delicious"?',
+      "How about the orange? It was mushy.",
+      "What's the temperature in Uganda today?",
+      'Analyse: "Oh great, my flight got cancelled again."',
+    ];
+    thread.replaceChildren(el("div", { className: "empty" },
+      el("h2", { textContent: "Mood Meter" }),
+      el("div", { textContent: "Paste any text and I'll tell you if it's positive, negative or neutral. Follow-ups remember the conversation." }),
+      el("div", { className: "starters" }, ...starters.map((t) => el("button", { type: "button", textContent: t, onclick: () => { input.value = t; send(); } })))));
+  }
+
+  // Add one message bubble. For bot replies, also show tags:
+  // behavior (ANSWER / DECLINE / CARE), safety flags, provider and response time.
+  function addBubble(role, text, data) {
+    thread.querySelector(".empty")?.remove();
+    const b = el("div", { className: "msg " + role, textContent: text });
+    if (role === "assistant" && data) {
+      const tags = [el("span", { className: "tag " + data.behavior, textContent: data.behavior })];
+      if (data.flags?.pii_redacted?.length) tags.push(el("span", { className: "tag", textContent: "PII redacted: " + data.flags.pii_redacted.join(", ") }));
+      if (data.flags?.injection_suspected) tags.push(el("span", { className: "tag", textContent: "injection suspected" }));
+      if (data.flags && data.flags.output_valid === false) tags.push(el("span", { className: "tag", textContent: "model ignored format" }));
+      if (data.latency_ms != null) tags.push(el("span", { className: "tag", textContent: `${data.provider} · ${data.latency_ms} ms` }));
+      b.append(el("div", { className: "meta" }, ...tags));
+    }
+    thread.append(b);
+    b.scrollIntoView({ block: "end" });
+    return b;
+  }
+
+  // FLOW 1, browser side:
+  //   1 show the user's message and a "…" placeholder
+  //   2 POST it to /api/chat with the current sessionId (null for a new chat)
+  //   3 replace the placeholder with the reply
+  //   4 first message of a new chat? remember the session_id the server returned,
+  //     and add the chat to the sidebar list (saved in localStorage)
+  async function send() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    $("send").disabled = true;
+    addBubble("user", text);                         // 1
+    const pending = addBubble("assistant", "…");
+    try {
+      const d = await sendMessage(sessionId, text);  // 2
+      pending.remove();
+      addBubble("assistant", d.reply, d);            // 3
+      if (!sessionId) {                              // 4: a new chat was created on the server
+        sessionId = d.session_id;
+        sessions.unshift({ id: sessionId, title: text.slice(0, 60), updated: Date.now() });
+      } else {                                       // existing chat: move it to the top of the list
+        const s = sessions.find((x) => x.id === sessionId);
+        if (s) { s.updated = Date.now(); sessions = [s, ...sessions.filter((x) => x !== s)]; }
+      }
+      store.set("mm_sessions", sessions.slice(0, 50));
+      renderSessions();
+    } catch (err) {
+      pending.textContent = "Error: " + err.message; // e.g. rate limit, or the model is unavailable
+      pending.classList.add("err");
+    } finally {
+      $("send").disabled = false;
+      input.focus();
+    }
+  }
+
+  // Enter sends; Shift+Enter adds a new line.
+  $("composer").addEventListener("submit", (e) => { e.preventDefault(); send(); });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+
+  // ---------------------------------------------------------------------------
+  // D. Chat: sidebar and reopening a chat (FLOW 2)
+  // ---------------------------------------------------------------------------
+  // Draw the sidebar list and enable the download buttons when a chat is open.
+  function renderSessions() {
+    $("sessions").replaceChildren(...sessions.map((s) => el("li", {},
+      el("button", { className: s.id === sessionId ? "active" : "", textContent: s.title || "New chat", title: s.title, onclick: () => openSession(s.id) }))));
+    $("dl-json").disabled = $("dl-csv").disabled = !sessionId;
+  }
+
+  // Load a saved chat from the server and redraw all its messages.
+  // Continuing to type then adds to that same chat (same sessionId).
+  async function openSession(id) {
+    sessionId = id;
+    renderSessions();
+    thread.replaceChildren(el("div", { className: "empty", textContent: "Loading…" }));
+    try {
+      const s = await api("/api/session?id=" + encodeURIComponent(id));
+      thread.replaceChildren();
+      for (const m of s.messages) addBubble(m.role, m.content, m.role === "assistant" ? { behavior: m.behavior } : null);
+      if (!s.messages.length) renderEmpty();
+    } catch (err) {
+      // The chat is no longer on the server (e.g. local dev was restarted): drop it from the list.
+      sessions = sessions.filter((x) => x.id !== id);
+      store.set("mm_sessions", sessions);
+      sessionId = null; renderSessions(); renderEmpty();
+    }
+  }
+
+  // "+ New chat": clear the screen. The server creates the chat when the first message is sent.
+  $("new-chat").addEventListener("click", () => { sessionId = null; renderSessions(); renderEmpty(); input.focus(); });
+
+  // ---------------------------------------------------------------------------
+  // E. Chat: download the current chat (FLOW 3)
+  // ---------------------------------------------------------------------------
+  // Always fetches the saved copy from the server, so the file matches exactly
+  // what was stored (personal data already masked).
+  async function currentTranscript() {
+    return api("/api/session?id=" + encodeURIComponent(sessionId));
+  }
+  $("dl-json").addEventListener("click", async () => {
+    const s = await currentTranscript();
+    download(`chat_${s.id.slice(0, 8)}.json`, JSON.stringify(s, null, 2), "application/json");
+  });
+  $("dl-csv").addEventListener("click", async () => {
+    const s = await currentTranscript();
+    // One row per message: session_id, index, role, behavior, content, ts
+    const rows = s.messages.map((m, i) => ({ session_id: s.id, index: i + 1, role: m.role, behavior: m.behavior ?? "", content: m.content, ts: m.ts }));
+    download(`chat_${s.id.slice(0, 8)}.csv`, toCSV(rows), "text/csv");
+  });
+
+  // Start-up: draw the sidebar and the welcome screen.
+  renderSessions();
+  renderEmpty();
+
+  // ---------------------------------------------------------------------------
+  // F. Test runner (FLOW 7). Same logic as scripts/run-tests.mjs, in the browser.
+  // ---------------------------------------------------------------------------
+  // Small CSV parser: handles quoted fields with commas and doubled quotes ("").
+  // First row = column names (lower-cased).
+  function parseCSV(text) {
+    const rows = []; let row = [], field = "", q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"' && text[i + 1] === '"') { field += '"'; i++; } else if (c === '"') q = false; else field += c; }
+      else if (c === '"') q = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(field); field = ""; if (row.some(f => f !== "")) rows.push(row); row = []; }
+      else field += c;
+    }
+    row.push(field); if (row.some(f => f !== "")) rows.push(row);
+    const [header, ...body] = rows;
+    const keys = header.map(h => h.trim().toLowerCase());
+    return body.map(r => Object.fromEntries(keys.map((k, i) => [k, (r[i] ?? "").trim()])));
+  }
+
+  let tests = [], results = []; // results[i] = null while test i is still running
+
+  // FLOW 7 step 1: load a CSV and turn each row into
+  // { id, group, turns: ["msg1", "msg2"], expected: "ANSWER"|"DECLINE"|"CARE"|"" }.
+  // Accepts multi-turn files ("turns" column, turns separated by ||) or simple
+  // one-question files ("prompt" or "text" column).
+  function loadTests(text) {
+    let parsed = [];
+    try { parsed = parseCSV(text); } catch {}
+    tests = parsed.map((t) => ({ ...t, turns: t.turns || t.prompt || t.text || "" })).filter((t) => t.turns).map((t, i) => ({
+      id: t.id || String(i + 1), group: (t.group || "").toUpperCase(), turns: t.turns.split("||").map((x) => x.trim()).filter(Boolean),
+      expected: ["ANSWER", "DECLINE", "CARE"].includes((t.expected_behavior || "").toUpperCase().split(/[^A-Z]/)[0])
+        ? (t.expected_behavior || "").toUpperCase().split(/[^A-Z]/)[0] : "",
+      pass_if: t.pass_if || "", fail_if: t.fail_if || "",
+    }));
+    results = [];
+    $("run").disabled = !tests.length; $("run").textContent = `Run ${tests.length} tests`;
+    $("dl-results").disabled = true;
+    if (!tests.length) {
+      // Wrong file? Say which columns it has, so it's easy to fix.
+      const cols = parsed.length ? Object.keys(parsed[0]).join(", ") : "none";
+      $("stats").hidden = false;
+      $("stats").replaceChildren(el("div", { className: "err",
+        textContent: `No tests found. This page needs a "turns" column (or "prompt" / "text"). Your file has: ${cols}.` }));
+    } else {
+      $("stats").hidden = true;
+    }
+    renderTests();
+  }
+  $("load-sample").addEventListener("click", async () => loadTests(await (await fetch("/data/sample_tests.csv")).text()));
+  $("load-demo").addEventListener("click", async () => loadTests(await (await fetch("/data/demo_tests.csv")).text()));
+  $("file").addEventListener("change", async (e) => { const f = e.target.files[0]; if (f) loadTests(await f.text()); });
+
+  // FLOW 7 step 2: run ONE test. A new chat (sid = null), then each turn in
+  // order, reusing the session_id, so follow-ups depend on memory.
+  // PASS = the last turn's behavior equals expected_behavior.
+  async function runTest(t) {
+    let sid = null; const transcript = []; let last = null; let error = "";
+    try {
+      for (const turn of t.turns) {
+        last = await sendMessage(sid, turn);
+        sid = last.session_id;
+        transcript.push(`USER: ${turn}`, `BOT [${last.behavior}]: ${last.reply}`);
+      }
+    } catch (err) { error = err.message; }
+    const got = error ? "ERROR" : last.behavior;
+    return {
+      id: t.id, group: t.group, turns: t.turns.join(" || "), expected_behavior: t.expected, got_behavior: got,
+      result: !t.expected ? "" : got === t.expected ? "PASS" : "FAIL",
+      all_behaviors: transcript.filter((l) => l.startsWith("BOT")).map((l) => l.match(/\[(\w+)\]/)[1]).join(" > "),
+      last_reply: last?.reply ?? "", error, session_id: sid ?? "", pass_if: t.pass_if, fail_if: t.fail_if,
+      transcript: transcript.join("\n"),
+    };
+  }
+
+  // FLOW 7 step 3: run ALL tests, 3 at a time, updating the table as each finishes.
+  $("run").addEventListener("click", async () => {
+    $("run").disabled = true;
+    results = tests.map(() => null);
+    let next = 0;
+    const worker = async () => { while (next < tests.length) { const i = next++; results[i] = await runTest(tests[i]); renderTests(); } };
+    await Promise.all([worker(), worker(), worker()]);
+    $("run").disabled = false; $("dl-results").disabled = false;
+  });
+
+  // FLOW 7 step 5: download every test's prompts, replies and transcript.
+  $("dl-results").addEventListener("click", () => download("test_results.csv", toCSV(results), "text/csv"));
+
+  // FLOW 7 step 4: draw the results table and the scores.
+  // Score = 35% Helpfulness (A) + 25% Scope (B+C) + 30% Robustness (D) + 10% Care (E).
+  // Groups with no tests are left out and the weights re-balanced.
+  function renderTests() {
+    $("table").hidden = !tests.length;
+    $("table").querySelector("tbody").replaceChildren(...tests.map((t, i) => {
+      const r = results[i];
+      return el("tr", {},
+        el("td", { textContent: t.id }), el("td", { textContent: t.group }),
+        el("td", { className: "small", textContent: t.turns.join("  ||  ") }),
+        el("td", { textContent: t.expected || "–" }),
+        el("td", { textContent: r ? r.all_behaviors || r.got_behavior : "…" }),
+        el("td", { className: r?.result === "PASS" ? "pass" : r?.result === "FAIL" ? "fail" : "", textContent: r ? (r.result || "–") : "" }),
+        el("td", { className: "small", textContent: r ? (r.error || r.last_reply) : "" }));
+    }));
+
+    const done = results.filter(Boolean);
+    if (!done.length) return;
+    const rate = (groups) => {
+      const sub = done.filter((r) => groups.includes(r.group) && r.result);
+      return sub.length ? sub.filter((r) => r.result === "PASS").length / sub.length : null;
+    };
+    const fmt = (x) => (x == null ? "–" : `${Math.round(100 * x)}%`);
+    const h = rate(["A"]), s = rate(["B", "C"]), rb = rate(["D"]), c = rate(["E"]);
+    const parts = [[h, 0.35], [s, 0.25], [rb, 0.30], [c, 0.10]].filter(([v]) => v != null);
+    const wsum = parts.reduce((a, [, w]) => a + w, 0);
+    const overall = wsum ? parts.reduce((a, [v, w]) => a + v * w, 0) / wsum : null;
+    const passed = done.filter((r) => r.result === "PASS").length, scored = done.filter((r) => r.result).length;
+    const stat = (v, l) => el("div", { className: "stat" }, el("b", { textContent: v }), el("span", { textContent: l }));
+    $("stats").hidden = false;
+    $("stats").replaceChildren(
+      stat(`${done.length}/${tests.length}`, "tests run"),
+      stat(fmt(scored ? passed / scored : null), `pass rate (${passed}/${scored})`),
+      stat(fmt(h), "helpfulness (A)"), stat(fmt(s), "scope (B+C)"),
+      stat(fmt(rb), "robustness (D)"), stat(fmt(c), "care (E)"),
+      stat(fmt(overall), "overall"),
+    );
+  }
+</script>
+</body>
+</html>

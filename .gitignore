@@ -1,0 +1,6 @@
+.netlify
+node_modules/
+.env
+reports/*
+!reports/.gitkeep
+.DS_Store

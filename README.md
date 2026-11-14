@@ -42,13 +42,16 @@ You need:
 
 Then get the code:
 
+1. Open https://github.com/gtransformerteam-ai/starter-kit and click **Fork** (top right). This gives you your own copy that you can push to.
+2. Clone **your fork** (replace `YOUR-GITHUB-NAME`) and install:
+
 ```bash
-git clone https://github.com/gtransformerteam-ai/starter-kit.git
+git clone https://github.com/YOUR-GITHUB-NAME/starter-kit.git
 cd starter-kit
 npm install
 ```
 
-> **Tip:** fork the repo first (the **Fork** button on GitHub), then clone *your* fork, so you can push your own changes.
+> **Note for Mac users:** paste the commands in this README exactly as shown. Don't add notes after a `#` on the same line: the Mac terminal (zsh) treats them as part of the command.
 
 ---
 
@@ -74,8 +77,10 @@ The app calls Claude through the Claude API. The API key is your password for it
 ## 3. Run it on your computer
 
 ```bash
-cp .env.example .env          # Windows (PowerShell): copy .env.example .env
+cp .env.example .env
 ```
+
+On Windows (PowerShell), use `copy .env.example .env` instead.
 
 Open `.env` in your editor, remove the `#` in front of `ANTHROPIC_API_KEY`, and paste your key:
 
@@ -111,14 +116,29 @@ Choose **one** option.
 
 ### Option A: from your terminal (fastest)
 
+**1. Log in** (opens your browser; click **Authorize**):
 ```bash
-npx netlify login             # opens the browser; approve access
-npx netlify init              # choose to create a NEW project (not link), pick your team, choose a project name
-npx netlify env:import .env   # copies ANTHROPIC_API_KEY from .env to Netlify (stays secret, not in code)
-npm run deploy                # builds and publishes; prints your live URL
+npx netlify login
 ```
 
-Open the URL it prints (e.g. `https://your-name.netlify.app`). Redeploy anytime with `npm run deploy`.
+**2. Create your site and deploy it.** Replace `your-team-bot` with a unique name; it becomes `https://your-team-bot.netlify.app`.
+```bash
+npx netlify deploy --create-site your-team-bot --prod
+```
+
+**3. Give the site your Claude key.** This copies it from `.env` to Netlify, where it stays secret.
+```bash
+npx netlify env:import .env
+```
+
+**4. Deploy again** so the site picks up the key:
+```bash
+npm run deploy
+```
+
+Open the URL it prints. Redeploy anytime with `npm run deploy`.
+
+> If the CLI ever asks *"How do you want to link this folder to a project?"*, choose **Search by full or partial project name** and type your site's name. Don't choose *"Use current git remote origin"*.
 
 ### Option B: from GitHub (auto-deploys on every push)
 
@@ -156,12 +176,12 @@ Each row shows what was asked, what the bot replied, what was expected, and a **
 Two downloads: **results** (one row per test) and **prompts & responses** (one row per message).
 
 ### In the terminal (no server needed)
-```bash
-npm test                                                            # sample tests
-npm run test:demo                                                   # harder demo tests
-node scripts/run-tests.mjs --tests my_tests.csv                     # your own file
-node scripts/run-tests.mjs --tests my_tests.csv --target https://your-name.netlify.app   # test the live site
-```
+| Run | Command |
+|---|---|
+| Sample tests | `npm test` |
+| Harder demo tests | `npm run test:demo` |
+| Your own file | `node scripts/run-tests.mjs --tests my_tests.csv` |
+| Against your live site | `node scripts/run-tests.mjs --tests my_tests.csv --target https://your-team-bot.netlify.app` |
 Reports are saved in `reports/`: a `.md` summary, a `.csv` with one row per test, and a `_turns.csv` with every prompt and response.
 
 ### Test file format
@@ -187,6 +207,10 @@ The automatic score only checks the *type* of reply (answered / declined / care)
 ---
 
 ## 6. Make it your own
+
+> ⚠️ **Keep the `/api/chat` request and response format the same** (see [How it works](#7-how-it-works)).
+> The organizers' tests send messages to your live site's `/api/chat` and read `behavior` and `reply`.
+> Change anything else (prompt, data, checks, UI, even rebuild the front end), but keep that contract.
 
 Everything about the bot's personality is in **`netlify/lib/llm.mjs`**:
 
@@ -223,9 +247,11 @@ Everything about the bot's personality is in **`netlify/lib/llm.mjs`**:
 
 ```
 Browser (public/index.html)
-  Chat tab ──────────┐                       ┌─ netlify/lib/checks.mjs   safety checks
-  Test runner tab ───┼─ POST /api/chat ──────┼─ netlify/lib/llm.mjs      prompt + Claude call
-                     └─ GET  /api/session ───┴─ netlify/lib/store.mjs    saved chats (Netlify Blobs)
+  Chat tab ──────────┐                       ┌─ netlify/lib/checks.mjs    safety checks
+  Test runner tab ───┼─ POST /api/chat ──────┼─ netlify/lib/rag.mjs       RAG: finds matching reviews
+                     │                       ├─ netlify/lib/external.mjs  live data (Hacker News API)
+                     │                       ├─ netlify/lib/llm.mjs       prompt + Claude call
+                     └─ GET  /api/session ───┴─ netlify/lib/store.mjs     saved chats (Netlify Blobs)
 scripts/run-tests.mjs ── same API, from the terminal
 ```
 
@@ -233,14 +259,16 @@ On every message, `netlify/functions/chat/index.mjs`:
 1. Checks the message (not empty, not too long, rate limit).
 2. Loads the chat history for this session.
 3. Masks personal data (emails, phone numbers, card numbers, SSNs).
-4. Sends the last 10 exchanges plus the new message to Claude.
-5. Checks the reply's format, adds support resources if distress was detected, and scrubs personal data from the reply.
-6. Saves both messages to the session and returns the reply.
+4. Adds extra context if the question needs it: matching reviews (**RAG**) or live headlines (**external API**).
+5. Sends the system prompt, the last 10 exchanges and the new message to Claude.
+6. Checks the reply's format, adds support resources if distress was detected, and scrubs personal data from the reply.
+7. Saves both messages to the session and returns the reply.
 
 **API**
 ```
 POST /api/chat      {"session_id": "<uuid, omit for a new chat>", "message": "..."}
-  → {"session_id", "turn", "behavior": "ANSWER|DECLINE|CARE", "reply", "flags", "provider", "model", "latency_ms", "usage"}
+  → {"session_id", "turn", "behavior": "ANSWER|DECLINE|CARE", "reply", "flags", "context", "provider", "model", "latency_ms", "usage"}
+     context = the reviews or headlines given to the model, or null
 
 GET  /api/session?id=<uuid>
   → {"id", "title", "created_at", "updated_at", "messages": [{"role", "content", "behavior", "ts"}]}
@@ -288,8 +316,9 @@ GET  /api/session?id=<uuid>
 | Replies are tagged **mock** | Key not found. Locally: check `.env` is in the project folder, the line has no `#` in front, and you restarted `npm run dev`. Live: add `ANTHROPIC_API_KEY` in Netlify and **redeploy**. |
 | "The assistant is unavailable" | Claude returned an error. Check Netlify **Logs → Functions → chat**: `401` = wrong key, `400`/`402` mentioning credit = add credits, `404` = wrong model name, `429` = rate limited, wait a moment. |
 | Live site shows an old version | Run `npm run deploy` again, then hard-refresh (Cmd+Shift+R / Ctrl+Shift+R). |
-| You deployed the wrong folder | Run `npx netlify status` to see which project the folder is linked to. Use `npx netlify link` to switch, or `npx netlify unlink` then `npx netlify init` to start fresh. |
-| `npx netlify init` asks about a build command | Accept the defaults; `netlify.toml` already has the right settings. |
+| You deployed the wrong folder | Run `npx netlify status` to see which project the folder is linked to. Use `npx netlify link` to switch, or `npx netlify unlink` then `npx netlify deploy --create-site NEW-NAME --prod` to start fresh. |
+| "No project found with the remote …" | You chose *Use current git remote origin*. Run `npx netlify link --name your-team-bot` (your site's name), then `npm run deploy`. |
+| Commands fail with `no such file` or odd errors on a Mac | You probably pasted a `#` note on the same line as a command. Paste only the command. |
 | Test runner says "No tests found" | The CSV needs a `turns` column (or `prompt` / `text`). |
 | Old chats vanish locally | Normal when running the test script outside `netlify dev`: chats are kept in memory. On Netlify they're saved permanently. |
 | `command not found: npx` | Install Node.js 18+ from https://nodejs.org and open a new terminal. |

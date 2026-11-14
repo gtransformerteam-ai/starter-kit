@@ -247,13 +247,13 @@ LLM grade them using `pass_if` / `fail_if`, to judge whether the content is righ
 | 6 | Score per area and overall |
 | 7 | Write `reports/tests_<time>.md` (summary + failed tests), `.csv` (one row per test) and `_turns.csv` (one row per message: every prompt and response) |
 
-```bash
-npm test                                                     # sample tests, local
-npm run test:demo                                            # harder demo tests
-node scripts/run-tests.mjs --tests my_tests.csv              # your file
-node scripts/run-tests.mjs --target http://localhost:8888    # through npm run dev
-node scripts/run-tests.mjs --target https://your-name.netlify.app --tests my_tests.csv
-```
+| Run | Command |
+|---|---|
+| Sample tests, locally | `npm test` |
+| Harder demo tests | `npm run test:demo` |
+| Your own file | `node scripts/run-tests.mjs --tests my_tests.csv` |
+| Through `npm run dev` | `node scripts/run-tests.mjs --target http://localhost:8888` |
+| Against your live site | `node scripts/run-tests.mjs --target https://your-team-bot.netlify.app --tests my_tests.csv` |
 
 ---
 
@@ -265,7 +265,8 @@ node scripts/run-tests.mjs --target https://your-name.netlify.app --tests my_tes
 | `npm run dev` | `netlify dev`: serves `public/` and the functions at http://localhost:8888, reads `.env`, uses Netlify Blobs locally |
 | `npm test` | Runs the test file locally, no server |
 | `npx netlify login` | Connects the CLI to your Netlify account (once) |
-| `npx netlify init` | Creates a Netlify project and links this folder to it (once) |
+| `npx netlify deploy --create-site <name> --prod` | Creates a Netlify project, links this folder to it and deploys (once) |
+| `npx netlify link --name <name>` | Links this folder to an existing Netlify project |
 | `npx netlify env:import .env` | Copies `.env` values to the Netlify project's environment variables |
 | `npm run deploy` | `netlify deploy --prod`: uploads `public/` and the functions, and prints the live URL |
 

@@ -16,6 +16,8 @@
 //   4  Load the chat session, or create a new one
 //   5  Stop if the chat is too long
 //   6  Mask personal data, and flag injection / distress
+//   7a Add extra context if the question needs it:
+//        RAG (matching product reviews, FLOW 10) or live data from an external API (FLOW 11)
 //   7  Build the conversation history the model will see (this is the "memory")
 //   8  Call the model and check its answer format
 //   9  Force a caring reply if distress was detected
@@ -30,6 +32,8 @@ import {
   SUPPORT_LINE, MAX_TURNS_PER_SESSION, HISTORY_TURNS_SENT,
 } from "../../lib/checks.mjs";
 import { callLLM, provider, modelName, env, PROMPT_VERSION } from "../../lib/llm.mjs";
+import { retrieve, wantsReviews, formatReviews } from "../../lib/rag.mjs";
+import { wantsNews, fetchTopHeadlines, formatHeadlines, NEWS_UNAVAILABLE } from "../../lib/external.mjs";
 
 // -----------------------------------------------------------------------------
 // Rate limiter used in step 3.
@@ -111,6 +115,37 @@ export default async (req, context) => {
     output_valid: true,                                  // updated in step 8
   };
 
+  // ---- Step 7a: add extra context (RAG or external API) --------------------------
+  // A simple "router" decides whether this question needs outside information:
+  //   - asks for current headlines        → call the Hacker News API (external.mjs)
+  //   - asks about the product / reviews  → retrieve matching reviews (rag.mjs)
+  //     (also for short follow-ups like "and the price?" right after a review answer)
+  //   - otherwise                         → no extra context
+  // The extra context is put IN FRONT of the user's message for the model only.
+  // It is not saved in the chat history; only which sources were used is saved.
+  let extra = null;        // { type: "rag" | "api", source, items: [...] }, returned to the browser
+  let contextText = "";    // the text block the model sees
+  const lastBot = [...session.messages].reverse().find((m) => m.role === "assistant");
+
+  if (wantsNews(redacted.text)) {
+    try {
+      const items = await fetchTopHeadlines(5);
+      extra = { type: "api", source: "Hacker News API", items };
+      contextText = formatHeadlines(items);
+    } catch (err) {
+      // The API is down or slow: keep chatting, and tell the model so it can say so.
+      console.error(JSON.stringify({ event: "external_api_error", message: String(err.message).slice(0, 200) }));
+      extra = { type: "api", source: "Hacker News API", items: [], error: "unavailable" };
+      contextText = NEWS_UNAVAILABLE;
+    }
+  } else if (wantsReviews(redacted.text, lastBot?.context_type)) {
+    const hits = retrieve(redacted.text); // top matching reviews, best first
+    extra = { type: "rag", source: "Aurora X2 reviews", items: hits };
+    contextText = hits.length
+      ? formatReviews(hits)
+      : "REFERENCE REVIEWS: no reviews matched this question. Say the reviews don't cover it; don't guess.";
+  }
+
   // ---- Step 7: build the conversation history (the "memory") ----------------
   // The model itself remembers nothing between calls. We resend the last
   // HISTORY_TURNS_SENT exchanges every time, followed by the new message.
@@ -121,7 +156,8 @@ export default async (req, context) => {
     role: m.role,
     content: m.role === "assistant" ? JSON.stringify({ behavior: m.behavior, reply: m.content }) : m.content,
   }));
-  const history = [...past, { role: "user", content: redacted.text }];
+  const userForModel = contextText ? `${contextText}\n\nUSER MESSAGE:\n${redacted.text}` : redacted.text;
+  const history = [...past, { role: "user", content: userForModel }];
 
   // ---- Step 8: call the model and check its answer ---------------------------
   // callLLM (llm.mjs) picks Claude, OpenAI or the mock model.
@@ -153,7 +189,12 @@ export default async (req, context) => {
   // ---- Step 11: save both messages to the session ----------------------------
   // The chat title is the first message (shown in the sidebar and downloads).
   session.messages.push({ role: "user", content: redacted.text, ts: new Date().toISOString() });
-  session.messages.push({ role: "assistant", content: reply, behavior, ts: new Date().toISOString() });
+  session.messages.push({
+    role: "assistant", content: reply, behavior, ts: new Date().toISOString(),
+    // Remember which sources were used, so follow-ups can reuse RAG (step 7a)
+    // and reopened chats can show the source tags.
+    ...(extra && { context_type: extra.type, context_source: extra.source, context_ids: extra.items.map((x, i) => x.id ?? `H${i + 1}`) }),
+  });
   if (!session.title) session.title = redacted.text.slice(0, 60);
   await saveSession(session);
 
@@ -164,6 +205,7 @@ export default async (req, context) => {
     behavior,                 // ANSWER | DECLINE | CARE (used by the test runner)
     reply,                    // what the user sees
     flags,
+    context: extra,         // which reviews / headlines were given to the model (null if none)
     provider: provider(),     // anthropic | openai | mock
     model: modelName(),
     prompt_version: PROMPT_VERSION,
@@ -174,7 +216,7 @@ export default async (req, context) => {
 
   // QUIET_LOGS is set by the test script to keep its output readable.
   if (!env("QUIET_LOGS")) {
-    console.log(JSON.stringify({ event: "chat", turn: response.turn, behavior, flags, latency_ms: response.latency_ms }));
+    console.log(JSON.stringify({ event: "chat", turn: response.turn, behavior, flags, context_type: extra?.type ?? null, latency_ms: response.latency_ms }));
   }
   return Response.json(response);
 };

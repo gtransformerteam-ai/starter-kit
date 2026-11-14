@@ -4,7 +4,9 @@ A ChatGPT-style chat app you can run locally and deploy to the web in about 15 m
 Use it as the starting point for your hackathon project.
 
 - 💬 **Remembers the conversation.** Each chat is saved, so follow-ups like *"how about the orange?"* are understood after *"how was the apple?"*.
-- 🎯 **Stays on topic.** The example bot, **Mood Meter**, only does sentiment analysis and politely declines everything else.
+- 🎯 **Stays on topic.** The example bot, **Mood Meter**, does sentiment analysis of customer feedback and politely declines everything else.
+- 📚 **RAG example.** Ask *"What do customers say about the battery?"*: it finds the matching reviews in a small review database, gives them to Claude, and the answer cites them ([R3]).
+- 🌐 **External API example.** Ask *"What's the mood of today's tech headlines?"*: the server fetches live headlines from the Hacker News API and Claude rates them.
 - 🛡️ **Starter safety checks.** Personal-data masking, jailbreak flags, distress handling, rate limits. Deliberately incomplete: improving them is part of the challenge.
 - 🧪 **Test runner.** Upload a CSV of test conversations, get pass/fail and scores, download every prompt and reply.
 - ⬇️ **Downloads.** Export any chat as JSON or CSV.
@@ -92,7 +94,9 @@ Open **http://localhost:8888**. Try:
 1. `What's the sentiment of "the apple was crunchy and delicious"?` → positive
 2. `How about the orange? It was mushy.` → negative. It remembered you were comparing fruit.
 3. `What's the temperature in Uganda today?` → a polite decline. It's a sentiment bot.
-4. Click **Download CSV** to get the conversation.
+4. `What do customers say about the Aurora X2 battery?` → a summary citing reviews (RAG). Open **Sources** to see what Claude was given. Then try `and the price?`
+5. `What's the mood of today's tech headlines?` → live headlines from an external API, each rated.
+6. Click **Download CSV** to get the conversation.
 
 Each reply shows a tag: **ANSWER**, **DECLINE** or **CARE**, plus `anthropic` and the response time.
 If it says `mock`, your key wasn't picked up (see [Troubleshooting](#8-troubleshooting)).
@@ -144,10 +148,12 @@ You'll be judged on how **helpful** *and* how **safe** your bot is. A bot that r
 Open the **Test runner** tab and choose one:
 - **Load sample tests**: 22 easy tests
 - **Load demo tests (harder)**: 22 harder tests
+- **Load RAG + API tests**: 9 tests for the review answers, follow-ups, the poisoned review and live headlines
 - **Choose File**: your own CSV
 
 Click **Run**. Each test runs in a fresh chat, turn by turn, so multi-turn tests also check memory.
-Then click **Download results CSV** for every prompt, reply and full transcript.
+Each row shows what was asked, what the bot replied, what was expected, and a **blue ✓ PASS** or **red ✗ FAIL** with the reason.
+Two downloads: **results** (one row per test) and **prompts & responses** (one row per message).
 
 ### In the terminal (no server needed)
 ```bash
@@ -156,7 +162,7 @@ npm run test:demo                                                   # harder dem
 node scripts/run-tests.mjs --tests my_tests.csv                     # your own file
 node scripts/run-tests.mjs --tests my_tests.csv --target https://your-name.netlify.app   # test the live site
 ```
-Reports are saved in `reports/` as a `.md` summary and a `.csv` with all transcripts.
+Reports are saved in `reports/`: a `.md` summary, a `.csv` with one row per test, and a `_turns.csv` with every prompt and response.
 
 ### Test file format
 ```csv
@@ -193,6 +199,9 @@ Everything about the bot's personality is in **`netlify/lib/llm.mjs`**:
 3. Update the page title, welcome text and starter questions in `public/index.html`.
 4. Write tests for **your** bot (same CSV format), run them, read the failures, improve, repeat.
    Bump `PROMPT_VERSION` each time you change the prompt, so you can compare runs.
+
+**Use your own data (RAG):** replace the reviews in `netlify/lib/knowledge/reviews.mjs` with your FAQ, docs or records. See Flow 10 in [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md).
+**Use a different API:** change `netlify/lib/external.mjs`. See Flow 11.
 
 **Ideas for improving safety** (`netlify/lib/checks.mjs` has the starter set):
 - A second, cheap model call that checks whether a message is in scope before answering
@@ -246,10 +255,13 @@ GET  /api/session?id=<uuid>
 │   └── lib/
 │       ├── llm.mjs                   ← the bot's instructions + Claude/OpenAI/mock calls
 │       ├── checks.mjs                ← safety checks
+│       ├── rag.mjs                   ← RAG: finds matching reviews (BM25 search)
+│       ├── knowledge/reviews.mjs     ← the RAG data: 24 fictional reviews
+│       ├── external.mjs              ← external API: live Hacker News headlines
 │       └── store.mjs                 saved chats (Netlify Blobs, or memory locally)
 ├── public/
 │   ├── index.html                    the whole web app (chat + test runner)
-│   └── data/                         sample_tests.csv, demo_tests.csv
+│   └── data/                         sample_tests.csv, demo_tests.csv, rag_api_tests.csv
 ├── scripts/run-tests.mjs             command-line test runner
 ├── netlify.toml                      Netlify settings + security headers
 ├── .env.example                      copy to .env, add your key

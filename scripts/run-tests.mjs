@@ -26,7 +26,8 @@
 //   4 Read and normalise the CSV
 //   5 Run each test in a NEW chat, turn by turn (3 tests at a time)
 //   6 Score: per group, then the weighted overall score
-//   7 Write reports/tests_<time>.md (summary) and .csv (every reply + transcript)
+//   7 Write reports/tests_<time>.md (summary), .csv (one row per test) and
+//     _turns.csv (one row per message: every prompt and response)
 // =============================================================================
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -148,6 +149,7 @@ if (!tests.length) {
 // `concurrency` workers each take the next test from the list until none are left.
 console.log(`Running ${tests.length} tests from ${testsPath.replace(ROOT + "/", "")} → ${target}`);
 const results = new Array(tests.length);
+const turnRows = []; // every prompt and response, one row per message
 let next = 0, done = 0;
 
 await Promise.all(Array.from({ length: concurrency }, async () => {
@@ -163,6 +165,12 @@ await Promise.all(Array.from({ length: concurrency }, async () => {
       sid = data.session_id; // keep using the same chat for the next turn
       lines.push(`USER: ${turn}`, `BOT [${data.behavior}]: ${data.reply}`);
       behaviors.push(data.behavior);
+      // One row per message, for the "prompts and responses" CSV (Step 7).
+      turnRows.push({
+        test_id: t.id, group: t.group, turn: behaviors.length, prompt: turn, response: data.reply, behavior: data.behavior,
+        sources: data.context?.items?.length ? data.context.items.map((x, k) => x.id ?? `H${k + 1}`).join(" ") : "",
+        expected_behavior: behaviors.length === t.turns.length ? t.expected : "",
+      });
     }
 
     // PASS if the LAST turn's behavior matches expected_behavior.
@@ -231,9 +239,14 @@ mkdirSync(join(ROOT, "reports"), { recursive: true });
 const base = join(ROOT, "reports", `tests_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}`);
 writeFileSync(`${base}.csv`, toCSV(results)); // one row per test, with full transcript
 writeFileSync(`${base}.md`, md);              // the summary above
+// Every prompt and response, sorted by test then turn, with the result on each test's last turn.
+const resultById = Object.fromEntries(results.map((r) => [r.id, r.result]));
+turnRows.sort((a, b) => tests.findIndex((t) => t.id === a.test_id) - tests.findIndex((t) => t.id === b.test_id) || a.turn - b.turn);
+for (const row of turnRows) row.result = row.expected_behavior ? resultById[row.test_id] : "";
+writeFileSync(`${base}_turns.csv`, toCSV(turnRows));
 
 // Short summary in the terminal.
 for (const s of scores) console.log(`${s.name.padEnd(12)} ${fmt(s.r)}`);
 console.log(`${"Overall".padEnd(12)} ${Math.round(overall * 100)}%`);
 console.log(`\nFailed: ${fails.map((r) => r.id).join(", ") || "none"}`);
-console.log(`Report: ${base.replace(ROOT + "/", "")}.md\nRows:   ${base.replace(ROOT + "/", "")}.csv`);
+console.log(`Report: ${base.replace(ROOT + "/", "")}.md\nTests:  ${base.replace(ROOT + "/", "")}.csv\nTurns:  ${base.replace(ROOT + "/", "")}_turns.csv  (every prompt and response)`);

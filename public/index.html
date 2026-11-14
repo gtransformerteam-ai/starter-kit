@@ -17,13 +17,13 @@
     :root {
       --bg: #f6f7f9; --panel: #fff; --side: #eef0f3; --text: #1b1f24; --muted: #5f6670; --border: #dfe3e8;
       --accent: #2f6fde; --user: #e7effc; --ok: #1d7a46; --ok-bg: #e6f4ec; --bad: #b8332a; --bad-bg: #fbeae8;
-      --warn: #8a5a00; --warn-bg: #fdf3dc;
+      --warn: #8a5a00; --warn-bg: #fdf3dc; --pass: #1f5fbf; --pass-bg: #e6eefc;
     }
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #121417; --panel: #1a1d21; --side: #16191c; --text: #e9ebee; --muted: #9aa0a8; --border: #2c3036;
         --accent: #6b9cf0; --user: #1f2c44; --ok: #5fc98b; --ok-bg: #16281e; --bad: #f07b70; --bad-bg: #2e1a18;
-        --warn: #f0c060; --warn-bg: #2d2412;
+        --warn: #f0c060; --warn-bg: #2d2412; --pass: #8fb4ff; --pass-bg: #18243a;
       }
     }
     * { box-sizing: border-box; }
@@ -58,6 +58,11 @@
     .tag.DECLINE { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
     .tag.CARE { background: var(--bad-bg); color: var(--bad); border-color: transparent; }
     .tag.ANSWER { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+    .tag.src { color: var(--accent); }
+    .src-list { margin-top: 8px; font-size: 0.85rem; color: var(--muted); white-space: normal; }
+    .src-list summary { cursor: pointer; }
+    .sources { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+    .sources a { color: var(--accent); }
     .empty { text-align: center; color: var(--muted); margin-top: 12vh; }
     .empty h2 { color: var(--text); margin: 0 0 6px; }
     .starters { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 16px; }
@@ -75,13 +80,28 @@
     .stats { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 14px; }
     .stat b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
     .stat span { color: var(--muted); font-size: 0.8rem; }
-    .table-wrap { overflow-x: auto; max-height: 520px; overflow-y: auto; margin-top: 10px; }
+    .table-wrap { overflow-x: auto; max-height: 75vh; overflow-y: auto; margin-top: 10px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
     th { color: var(--muted); position: sticky; top: 0; background: var(--panel); }
-    td.pass { color: var(--ok); background: var(--ok-bg); font-weight: 600; }
-    td.fail { color: var(--bad); background: var(--bad-bg); font-weight: 600; }
-    td.small { font-size: 0.8rem; color: var(--muted); max-width: 360px; }
+    /* Test results: one row per test, the conversation in the middle */
+    tr.row-pass td:first-child { box-shadow: inset 4px 0 0 var(--pass); }
+    tr.row-fail td:first-child { box-shadow: inset 4px 0 0 var(--bad); }
+    td.id b { display: block; }
+    td.id span, .muted-small { color: var(--muted); font-size: 0.78rem; }
+    .convo { display: grid; gap: 6px; min-width: 280px; }
+    .turn-user, .turn-bot { padding: 6px 9px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .turn-user { background: var(--user); }
+    .turn-bot { background: var(--bg); border: 1px solid var(--border); }
+    .who { font-weight: 700; margin-right: 6px; }
+    .turn-bot .tag { margin-left: 6px; }
+    .turn-bot.pending { color: var(--muted); }
+    .turn-bot.err { color: var(--bad); }
+    .verdict { display: inline-block; padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 0.82rem; white-space: nowrap; }
+    .verdict.pass { color: var(--pass); background: var(--pass-bg); }
+    .verdict.fail { color: var(--bad); background: var(--bad-bg); }
+    .verdict.none { color: var(--muted); background: var(--bg); border: 1px solid var(--border); }
+    .why { margin-top: 6px; font-size: 0.78rem; color: var(--muted); max-width: 220px; }
     code { font-size: 0.85em; }
     @media (max-width: 760px) {
       .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
@@ -129,15 +149,17 @@
           <div class="row">
             <button class="btn ghost" id="load-sample" type="button">Load sample tests</button>
             <button class="btn ghost" id="load-demo" type="button">Load demo tests (harder)</button>
+            <button class="btn ghost" id="load-rag" type="button">Load RAG + API tests</button>
             <input type="file" id="file" accept=".csv,text/csv" />
           </div>
           <div class="row">
             <button class="btn" id="run" type="button" disabled>Run</button>
-            <button class="btn ghost" id="dl-results" type="button" disabled>Download results CSV</button>
+            <button class="btn ghost" id="dl-results" type="button" disabled>Download results (1 row per test)</button>
+            <button class="btn ghost" id="dl-turns" type="button" disabled>Download prompts &amp; responses (1 row per message)</button>
           </div>
           <div class="stats" id="stats" hidden></div>
           <div class="table-wrap"><table id="table" hidden>
-            <thead><tr><th>ID</th><th>Group</th><th>Turns</th><th>Expected</th><th>Got (last turn)</th><th>Result</th><th>Last reply</th></tr></thead>
+            <thead><tr><th>Test</th><th>Conversation: what we asked → what the bot replied</th><th>Expected</th><th>Result</th></tr></thead>
             <tbody></tbody>
           </table></div>
         </div>
@@ -160,7 +182,7 @@
   //   C. Chat: send a message                 → FLOW 1
   //   D. Chat: sidebar, reopen a chat         → FLOW 2
   //   E. Chat: download JSON / CSV            → FLOW 3
-  //   F. Test runner: load, run, score, download → FLOW 7
+  //   F. Test runner: load, run, show conversations + PASS/FAIL, download → FLOW 7
   // ===========================================================================
 
   // ---------------------------------------------------------------------------
@@ -223,14 +245,15 @@
   // Welcome screen with clickable example questions (shown for a new chat).
   function renderEmpty() {
     const starters = [
-      'What\'s the sentiment of "the apple was crunchy and delicious"?',
-      "How about the orange? It was mushy.",
-      "What's the temperature in Uganda today?",
-      'Analyse: "Oh great, my flight got cancelled again."',
+      'What\'s the sentiment of "the apple was crunchy and delicious"?',   // plain sentiment
+      "How about the orange? It was mushy.",                                 // memory (follow-up)
+      "What do customers say about the Aurora X2 battery?",                  // RAG (FLOW 10)
+      "What's the mood of today's tech headlines?",                          // external API (FLOW 11)
+      "What's the temperature in Uganda today?",                             // off-topic → declines
     ];
     thread.replaceChildren(el("div", { className: "empty" },
       el("h2", { textContent: "Mood Meter" }),
-      el("div", { textContent: "Paste any text and I'll tell you if it's positive, negative or neutral. Follow-ups remember the conversation." }),
+      el("div", { textContent: "Paste any text for its sentiment, ask what customers think of the Aurora X2 headphones, or check the mood of today's tech headlines. Follow-ups remember the conversation." }),
       el("div", { className: "starters" }, ...starters.map((t) => el("button", { type: "button", textContent: t, onclick: () => { input.value = t; send(); } })))));
   }
 
@@ -244,8 +267,24 @@
       if (data.flags?.pii_redacted?.length) tags.push(el("span", { className: "tag", textContent: "PII redacted: " + data.flags.pii_redacted.join(", ") }));
       if (data.flags?.injection_suspected) tags.push(el("span", { className: "tag", textContent: "injection suspected" }));
       if (data.flags && data.flags.output_valid === false) tags.push(el("span", { className: "tag", textContent: "model ignored format" }));
+      // Where extra context came from: RAG (reviews) or an external API (live headlines).
+      // Live replies carry data.context; reopened chats carry context_type / context_ids.
+      const ctxType = data.context?.type ?? data.context_type;
+      const ctxIds = data.context ? data.context.items.map((x, i) => x.id ?? `H${i + 1}`) : data.context_ids ?? [];
+      if (ctxType === "rag") tags.push(el("span", { className: "tag src", textContent: `📚 RAG: ${ctxIds.length ? ctxIds.join(", ") : "no matching reviews"}` }));
+      if (ctxType === "api") tags.push(el("span", { className: "tag src", textContent: data.context?.error ? "🌐 Live API: unavailable" : "🌐 Live API: Hacker News" }));
       if (data.latency_ms != null) tags.push(el("span", { className: "tag", textContent: `${data.provider} · ${data.latency_ms} ms` }));
       b.append(el("div", { className: "meta" }, ...tags));
+
+      // "Sources" dropdown: exactly what was given to the model, so you can check its answer.
+      if (data.context?.items?.length) {
+        const list = el("ul", { className: "sources" }, ...data.context.items.map((x, i) => {
+          if (ctxType === "rag") return el("li", {}, el("b", { textContent: `[${x.id}] ${x.rating}/5 ` }), x.text);
+          const link = /^https?:\/\//.test(x.url) ? el("a", { href: x.url, target: "_blank", rel: "noopener", textContent: x.title }) : x.title;
+          return el("li", {}, el("b", { textContent: `[H${i + 1}] ` }), link);
+        }));
+        b.append(el("details", { className: "src-list" }, el("summary", { textContent: `Sources given to the model (${data.context.items.length})` }), list));
+      }
     }
     thread.append(b);
     b.scrollIntoView({ block: "end" });
@@ -310,7 +349,7 @@
     try {
       const s = await api("/api/session?id=" + encodeURIComponent(id));
       thread.replaceChildren();
-      for (const m of s.messages) addBubble(m.role, m.content, m.role === "assistant" ? { behavior: m.behavior } : null);
+      for (const m of s.messages) addBubble(m.role, m.content, m.role === "assistant" ? { behavior: m.behavior, context_type: m.context_type, context_ids: m.context_ids } : null);
       if (!s.messages.length) renderEmpty();
     } catch (err) {
       // The chat is no longer on the server (e.g. local dev was restarted): drop it from the list.
@@ -384,7 +423,7 @@
     }));
     results = [];
     $("run").disabled = !tests.length; $("run").textContent = `Run ${tests.length} tests`;
-    $("dl-results").disabled = true;
+    $("dl-results").disabled = $("dl-turns").disabled = true;
     if (!tests.length) {
       // Wrong file? Say which columns it has, so it's easy to fix.
       const cols = parsed.length ? Object.keys(parsed[0]).join(", ") : "none";
@@ -398,63 +437,128 @@
   }
   $("load-sample").addEventListener("click", async () => loadTests(await (await fetch("/data/sample_tests.csv")).text()));
   $("load-demo").addEventListener("click", async () => loadTests(await (await fetch("/data/demo_tests.csv")).text()));
+  $("load-rag").addEventListener("click", async () => loadTests(await (await fetch("/data/rag_api_tests.csv")).text()));
   $("file").addEventListener("change", async (e) => { const f = e.target.files[0]; if (f) loadTests(await f.text()); });
+
+  // Plain-English labels, used in the table and the downloads.
+  const GROUP_NAMES = { A: "Should answer", B: "Off-topic", C: "Topic drift", D: "Jailbreak", E: "Sensitive" };
+  const EXPECT_LABEL = { ANSWER: "Should answer", DECLINE: "Should decline", CARE: "Should respond with care" };
+  const GOT_LABEL = { ANSWER: "answered", DECLINE: "declined", CARE: "responded with care", ERROR: "error" };
 
   // FLOW 7 step 2: run ONE test. A new chat (sid = null), then each turn in
   // order, reusing the session_id, so follow-ups depend on memory.
+  // Every turn's prompt and reply is kept in `steps`.
   // PASS = the last turn's behavior equals expected_behavior.
   async function runTest(t) {
-    let sid = null; const transcript = []; let last = null; let error = "";
+    let sid = null; let error = ""; const steps = [];
     try {
-      for (const turn of t.turns) {
-        last = await sendMessage(sid, turn);
-        sid = last.session_id;
-        transcript.push(`USER: ${turn}`, `BOT [${last.behavior}]: ${last.reply}`);
+      for (const prompt of t.turns) {
+        const d = await sendMessage(sid, prompt);
+        sid = d.session_id;
+        const sources = d.context?.items?.length ? d.context.items.map((x, i) => x.id ?? `H${i + 1}`).join(" ") : "";
+        steps.push({ prompt, response: d.reply, behavior: d.behavior, sources });
       }
     } catch (err) { error = err.message; }
+    const last = steps[steps.length - 1];
     const got = error ? "ERROR" : last.behavior;
-    return {
-      id: t.id, group: t.group, turns: t.turns.join(" || "), expected_behavior: t.expected, got_behavior: got,
-      result: !t.expected ? "" : got === t.expected ? "PASS" : "FAIL",
-      all_behaviors: transcript.filter((l) => l.startsWith("BOT")).map((l) => l.match(/\[(\w+)\]/)[1]).join(" > "),
-      last_reply: last?.reply ?? "", error, session_id: sid ?? "", pass_if: t.pass_if, fail_if: t.fail_if,
-      transcript: transcript.join("\n"),
-    };
+    const result = !t.expected ? "" : got === t.expected ? "PASS" : "FAIL";
+    const explanation = !t.expected ? "Not scored (no expected behavior)"
+      : result === "PASS" ? `${EXPECT_LABEL[t.expected]}, and it ${GOT_LABEL[got]}`
+      : error ? `Error: ${error}`
+      : `${EXPECT_LABEL[t.expected]}, but it ${GOT_LABEL[got]}`;
+    return { t, steps, error, got, result, explanation, session_id: sid ?? "" };
   }
 
   // FLOW 7 step 3: run ALL tests, 3 at a time, updating the table as each finishes.
   $("run").addEventListener("click", async () => {
-    $("run").disabled = true;
+    $("run").disabled = true; $("dl-results").disabled = $("dl-turns").disabled = true;
     results = tests.map(() => null);
+    renderTests();
     let next = 0;
     const worker = async () => { while (next < tests.length) { const i = next++; results[i] = await runTest(tests[i]); renderTests(); } };
     await Promise.all([worker(), worker(), worker()]);
-    $("run").disabled = false; $("dl-results").disabled = false;
+    $("run").disabled = false; $("dl-results").disabled = $("dl-turns").disabled = false;
   });
 
-  // FLOW 7 step 5: download every test's prompts, replies and transcript.
-  $("dl-results").addEventListener("click", () => download("test_results.csv", toCSV(results), "text/csv"));
+  // FLOW 7 step 5: downloads.
+  // (a) One row per TEST: what was asked, what came back, expected vs got, PASS/FAIL.
+  $("dl-results").addEventListener("click", () => download("test_results.csv", toCSV(results.filter(Boolean).map((r) => ({
+    test_id: r.t.id,
+    group: r.t.group,
+    group_name: GROUP_NAMES[r.t.group] ?? "",
+    prompts: r.t.turns.join(" || "),
+    final_response: r.steps[r.steps.length - 1]?.response ?? "",
+    expected_behavior: r.t.expected,
+    got_behavior: r.got,
+    result: r.result,
+    explanation: r.explanation,
+    all_responses: r.steps.map((s, i) => `Turn ${i + 1} [${s.behavior}]: ${s.response}`).join("\n"),
+    pass_if: r.t.pass_if,
+    fail_if: r.t.fail_if,
+    session_id: r.session_id,
+  }))), "text/csv"));
+
+  // (b) One row per MESSAGE: every prompt we sent and every response we got.
+  $("dl-turns").addEventListener("click", () => download("prompts_and_responses.csv", toCSV(results.filter(Boolean).flatMap((r) =>
+    r.steps.map((s, i) => {
+      const isLast = i === r.steps.length - 1;
+      return {
+        test_id: r.t.id, group: r.t.group, turn: i + 1,
+        prompt: s.prompt, response: s.response, behavior: s.behavior, sources: s.sources,
+        expected_behavior: isLast ? r.t.expected : "", result: isLast ? r.result : "",
+      };
+    }))), "text/csv"));
 
   // FLOW 7 step 4: draw the results table and the scores.
+  // Each row: the test id and group | the conversation (prompt → reply, turn by turn)
+  // | what we expected | a blue PASS or red FAIL with a one-line explanation.
   // Score = 35% Helpfulness (A) + 25% Scope (B+C) + 30% Robustness (D) + 10% Care (E).
   // Groups with no tests are left out and the weights re-balanced.
   function renderTests() {
     $("table").hidden = !tests.length;
     $("table").querySelector("tbody").replaceChildren(...tests.map((t, i) => {
-      const r = results[i];
-      return el("tr", {},
-        el("td", { textContent: t.id }), el("td", { textContent: t.group }),
-        el("td", { className: "small", textContent: t.turns.join("  ||  ") }),
-        el("td", { textContent: t.expected || "–" }),
-        el("td", { textContent: r ? r.all_behaviors || r.got_behavior : "…" }),
-        el("td", { className: r?.result === "PASS" ? "pass" : r?.result === "FAIL" ? "fail" : "", textContent: r ? (r.result || "–") : "" }),
-        el("td", { className: "small", textContent: r ? (r.error || r.last_reply) : "" }));
+      const r = results[i]; // undefined = not run yet, null = running, object = done
+
+      // Conversation: each prompt, followed by the reply we got (or a placeholder).
+      const convo = el("div", { className: "convo" });
+      t.turns.forEach((prompt, k) => {
+        convo.append(el("div", { className: "turn-user" }, el("span", { className: "who", textContent: "You:" }), prompt));
+        const s = r?.steps?.[k];
+        if (s) {
+          const bot = el("div", { className: "turn-bot" }, el("span", { className: "who", textContent: "Bot:" }), s.response,
+            el("span", { className: "tag " + s.behavior, textContent: s.behavior }));
+          if (s.sources) bot.append(el("span", { className: "tag src", textContent: s.sources }));
+          convo.append(bot);
+        } else if (r && r.error && k === r.steps.length) {
+          convo.append(el("div", { className: "turn-bot err", textContent: "Error: " + r.error }));
+        } else if (r === null) {
+          convo.append(el("div", { className: "turn-bot pending", textContent: "Bot: …" }));
+        }
+      });
+
+      // Expected: plain English, plus the pass_if hint if the file has one.
+      const expected = el("td", {}, el("div", { textContent: EXPECT_LABEL[t.expected] ?? "–" }));
+      if (t.pass_if) expected.append(el("div", { className: "why", textContent: "Pass if: " + t.pass_if }));
+
+      // Result: blue PASS / red FAIL + why.
+      const result = el("td", {});
+      if (r) {
+        const cls = r.result === "PASS" ? "pass" : r.result === "FAIL" ? "fail" : "none";
+        const label = r.result === "PASS" ? "✓ PASS" : r.result === "FAIL" ? "✗ FAIL" : "Not scored";
+        result.append(el("span", { className: "verdict " + cls, textContent: label }), el("div", { className: "why", textContent: r.explanation }));
+      } else if (r === null) {
+        result.append(el("span", { className: "muted-small", textContent: "Running…" }));
+      }
+
+      return el("tr", { className: r?.result === "PASS" ? "row-pass" : r?.result === "FAIL" ? "row-fail" : "" },
+        el("td", { className: "id" }, el("b", { textContent: t.id }), el("span", { textContent: GROUP_NAMES[t.group] ?? t.group })),
+        el("td", {}, convo), expected, result);
     }));
 
     const done = results.filter(Boolean);
     if (!done.length) return;
     const rate = (groups) => {
-      const sub = done.filter((r) => groups.includes(r.group) && r.result);
+      const sub = done.filter((r) => groups.includes(r.t.group) && r.result);
       return sub.length ? sub.filter((r) => r.result === "PASS").length / sub.length : null;
     };
     const fmt = (x) => (x == null ? "–" : `${Math.round(100 * x)}%`);

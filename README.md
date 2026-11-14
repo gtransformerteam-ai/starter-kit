@@ -14,6 +14,10 @@ Use it as the starting point for your hackathon project.
 
 It uses **Claude** as the AI model and **Netlify** to host the web page, the backend and the saved chats.
 
+> 🧭 **Prefer a low-code route?** Follow the
+> [Google AI Studio + Google Cloud guide](https://docs.google.com/document/d/1oMUl-ktcz2P2fvMtNpw_acDrpFqZU11Oc32e_H3uRjI/edit?tab=t.0)
+> to build and host a PDF-based RAG app from prompts, using Google Cloud's free credit.
+
 ---
 
 ## Contents

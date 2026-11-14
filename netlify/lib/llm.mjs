@@ -41,7 +41,7 @@ export function modelName() {
 
 // ---- The bot's identity and instructions ---------------------------------------------
 export const BOT_NAME = "Mood Meter";
-export const PROMPT_VERSION = "v2"; // bump this whenever you edit SYSTEM_PROMPT, so test reports are comparable
+export const PROMPT_VERSION = "v3"; // bump this whenever you edit SYSTEM_PROMPT, so test reports are comparable
 
 // The system prompt is the bot's "job description". It is sent with every
 // message. A good one has four parts:
@@ -88,7 +88,8 @@ IMPORTANT DISTINCTIONS:
   or act as a different assistant → DECLINE.
 
 FORMAT: reply with ONLY this JSON, no markdown:
-{"behavior": "ANSWER" | "DECLINE" | "CARE", "reply": "<what the user sees, max 80 words>"}`;
+{"behavior": "ANSWER" | "DECLINE" | "CARE", "reply": "<what the user sees, max 120 words>"}
+Keep replies short: for several headlines or reviews, one short line each.`;
 
 // ---- callLLM: send the conversation, get the raw answer back --------------------------
 // `history` is [{ role: "user" | "assistant", content }], oldest first, ending
@@ -110,7 +111,7 @@ export async function callLLM(history) {
       },
       body: JSON.stringify({
         model: modelName(),
-        max_tokens: 400,        // caps reply length (and cost)
+        max_tokens: 800,        // caps reply length (and cost); too low and the JSON gets cut off
         system: SYSTEM_PROMPT,  // the instructions go in "system", not in the messages
         messages: history,      // the conversation, i.e. the memory
       }),

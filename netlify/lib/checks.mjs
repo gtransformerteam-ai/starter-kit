@@ -97,7 +97,17 @@ export function parseModelOutput(raw) {
     if (!BEHAVIORS.includes(behavior) || !reply) throw new Error("bad fields");
     return { ok: true, behavior, reply: reply.slice(0, 1500) };
   } catch {
+    // Not valid JSON. Often the answer was cut off (too long for max_tokens),
+    // e.g. {"behavior": "DECLINE", "reply": "I can't summarise tha
+    // Salvage the label and the reply text so the user never sees raw JSON.
     const text = String(raw ?? "").trim();
+    const b = text.match(/"behavior"\s*:\s*"(ANSWER|DECLINE|CARE)"/i);
+    const r = text.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/s);
+    if (b && r) {
+      let reply = r[1];
+      try { reply = JSON.parse(`"${reply.replace(/\\$/, "")}"`); } catch {} // turn \n, \" back into text
+      return { ok: false, behavior: b[1].toUpperCase(), reply: (reply.trim() + "…").slice(0, 1500) };
+    }
     return { ok: false, behavior: "ANSWER", reply: text.slice(0, 1500) || "Sorry, something went wrong. Please try again." };
   }
 }
